@@ -1,0 +1,17 @@
+/* OSSL_ALGORITHM is four object pointers; checked in ops_algorithm.c. */
+SECTIONS
+{
+    ops_digest ALIGN(@CMAKE_SIZEOF_VOID_P@) : SUBALIGN(@CMAKE_SIZEOF_VOID_P@)
+    {
+        HIDDEN(ops_digest_begin = .);
+        KEEP(*(.ops_digest.entries))
+        HIDDEN(ops_digest_terminal = .);
+        KEEP(*(.ops_digest.end))
+        HIDDEN(ops_digest_end = .);
+    }
+    ASSERT((ops_digest_terminal - ops_digest_begin) % @OPS_ALGORITHM_SIZE@ == 0,
+        "Digest records are not contiguous OSSL_ALGORITHM entries")
+    ASSERT(ops_digest_end - ops_digest_terminal == @OPS_ALGORITHM_SIZE@,
+        "Exactly one digest terminator must be linked")
+}
+INSERT AFTER .data.rel.ro;

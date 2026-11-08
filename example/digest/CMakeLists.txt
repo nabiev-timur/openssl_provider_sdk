@@ -1,0 +1,4 @@
+add_library(ops_example_digest OBJECT dummy_hash.c)
+set_target_properties(ops_example_digest PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_link_libraries(ops_example_digest PRIVATE
+    openssl_provider_sdk_static ops_build_options)
