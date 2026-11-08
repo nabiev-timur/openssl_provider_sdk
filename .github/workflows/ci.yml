@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux / Ubuntu 26.04
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OPS_CI_IMAGE: ops-sdk-ci:ubuntu26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build toolchain image
+        run: docker build -t "$OPS_CI_IMAGE" - < docker/Dockerfile.openssl_provider_sdk.ubuntu26.04
+
+      - name: Debug and CTest
+        run: |
+          docker run --rm \
+            --mount "type=bind,source=${GITHUB_WORKSPACE},target=/workspace,readonly" \
+            "$OPS_CI_IMAGE"
+
+      - name: Release with LTO and section GC
+        run: |
+          docker run --rm \
+            --mount "type=bind,source=${GITHUB_WORKSPACE},target=/workspace,readonly" \
+            "$OPS_CI_IMAGE" sh -ec '
+              cmake -S /workspace -B /build -G Ninja \
+                -DCMAKE_BUILD_TYPE=Release -DOPS_WARNINGS_AS_ERRORS=ON \
+                -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
+                "-DCMAKE_C_FLAGS=-ffunction-sections -fdata-sections" \
+                -DCMAKE_EXE_LINKER_FLAGS=-Wl,--gc-sections \
+                -DCMAKE_MODULE_LINKER_FLAGS=-Wl,--gc-sections
+              cmake --build /build --parallel
+              ctest --test-dir /build --output-on-failure
+            '
+
+      - name: AddressSanitizer and UndefinedBehaviorSanitizer
+        run: |
+          docker run --rm \
+            --mount "type=bind,source=${GITHUB_WORKSPACE},target=/workspace,readonly" \
+            "$OPS_CI_IMAGE" sh -ec '
+              cmake -S /workspace -B /build -G Ninja \
+                -DCMAKE_BUILD_TYPE=Debug -DOPS_WARNINGS_AS_ERRORS=ON \
+                "-DCMAKE_C_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer"
+              cmake --build /build --parallel
+              ctest --test-dir /build -LE cli --output-on-failure
+            '
+
+      - name: Relocatable installed package and consumers
+        run: |
+          docker run --rm \
+            --mount "type=bind,source=${GITHUB_WORKSPACE},target=/workspace,readonly" \
+            "$OPS_CI_IMAGE" sh -ec '
+              cmake -S /workspace -B /sdk-build -G Ninja \
+                -DCMAKE_BUILD_TYPE=Release -DOPS_WARNINGS_AS_ERRORS=ON \
+                -DBUILD_TESTING=OFF -DOPS_BUILD_EXAMPLES=OFF
+              cmake --build /sdk-build --parallel
+              cmake --install /sdk-build --prefix /sdk-stage
+              cmake -E rename /sdk-stage /sdk-installed
+              cmake -E rename /sdk-build /sdk-original
+              cmake -S /workspace/test/package -B /consumer-build -G Ninja \
+                -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/sdk-installed
+              cmake --build /consumer-build --parallel
+              ctest --test-dir /consumer-build --output-on-failure
+            '

@@ -46,6 +46,8 @@ cmake --build build --parallel
 
 `OPS_BUILD_EXAMPLES` по умолчанию включён для самостоятельной сборки SDK.
 Команды Docker и Release/LTO: [docker-build.md](docs/docker-build.md).
+GitHub Actions запускает эти проверки автоматически; устройство workflow и
+локальный запуск его режимов описаны в [ci.md](docs/ci.md).
 
 ## Создание провайдера
 
